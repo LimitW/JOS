@@ -66,7 +66,45 @@ trap_init(void)
 
 	// LAB 3: Your code here.
 
-	// Per-CPU setup 
+	extern void _divide();
+	extern void _debug();
+	extern void _nmi();
+	extern void _brkpt();
+	extern void _oflow();
+	extern void _bound();
+	extern void _illop();
+	extern void _device();
+	extern void _dblflt();
+	extern void _tss();
+	extern void _segnp();
+	extern void _stack();
+	extern void _gpflt();
+	extern void _pgflt();
+	extern void _fperr();
+	extern void _align();
+	extern void _mchk();
+	extern void _simderr();
+
+	SETGATE(idt[T_DIVIDE], 0, GD_KT, _divide, 0);
+	SETGATE(idt[T_DEBUG], 0, GD_KT, _debug, 0);
+	SETGATE(idt[T_NMI], 0, GD_KT, _nmi, 0);
+	SETGATE(idt[T_BRKPT], 0, GD_KT, _brkpt, 3);
+	SETGATE(idt[T_OFLOW], 0, GD_KT, _oflow, 0);
+	SETGATE(idt[T_BOUND], 0, GD_KT, _bound, 0);
+	SETGATE(idt[T_ILLOP], 0, GD_KT, _illop, 0);
+	SETGATE(idt[T_DEVICE], 0, GD_KT, _device, 0);
+	SETGATE(idt[T_DBLFLT], 0, GD_KT, _dblflt, 0);
+	SETGATE(idt[T_TSS], 0, GD_KT, _tss, 0);
+	SETGATE(idt[T_SEGNP], 0, GD_KT, _segnp, 0);
+	SETGATE(idt[T_STACK], 0, GD_KT, _stack, 0);
+	SETGATE(idt[T_GPFLT], 0, GD_KT, _gpflt, 0);
+	SETGATE(idt[T_PGFLT], 0, GD_KT, _pgflt, 0);
+	SETGATE(idt[T_FPERR], 0, GD_KT, _fperr, 0);
+	SETGATE(idt[T_ALIGN], 0, GD_KT, _align, 0);
+	SETGATE(idt[T_MCHK], 0, GD_KT, _mchk, 0);
+	SETGATE(idt[T_SIMDERR], 0, GD_KT, _simderr, 0);
+
+	// Per-CPU setup
 	trap_init_percpu();
 }
 

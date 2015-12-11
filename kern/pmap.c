@@ -100,7 +100,7 @@ boot_alloc(uint32_t n)
 	//
 	// LAB 2: Your code here.
 	result = nextfree;
-	nextfree = ROUNDUP(nextfree + n, PGSIZE); 
+	nextfree = ROUNDUP(nextfree + n, PGSIZE);
 
 	return result;
 }
@@ -152,6 +152,7 @@ mem_init(void)
 	// Make 'envs' point to an array of size 'NENV' of 'struct Env'.
 	// LAB 3: Your code here.
 
+	envs = (struct Env *) boot_alloc(NENV * sizeof(struct Env));
 	//////////////////////////////////////////////////////////////////////
 	// Now that we've allocated the initial kernel data structures, we set
 	// up the list of free physical pages. Once we've done so, all further
@@ -182,9 +183,8 @@ mem_init(void)
 	//    - the new image at UENVS  -- kernel R, user R
 	//    - envs itself -- kernel RW, user NONE
 	// LAB 3: Your code here.
-
-	//////////////////////////////////////////////////////////////////////
-	// Use the physical memory that 'bootstack' refers to as the kernel
+	boot_map_region(kern_pgdir, UENVS, ROUNDUP(NENV * sizeof(struct Env), PGSIZE), PADDR(envs), PTE_U);
+	////////////////////////////////////////////////////////////////////// // Use the physical memory that 'bootstack' refers to as the kernel
 	// stack.  The kernel stack grows down from virtual address KSTACKTOP.
 	// We consider the entire range from [KSTACKTOP-PTSIZE, KSTACKTOP)
 	// to be the kernel stack, but break this into two pieces:
@@ -262,6 +262,7 @@ page_init(void)
 	size_t i;
 	int lu = npages_basemem;
 	int ru = (int)(ROUNDUP((char*)(pages) + npages * sizeof(struct Page) - KERNBASE, PGSIZE)) / PGSIZE;
+	ru += (int) ROUNDUP(NENV * sizeof(struct Env), PGSIZE) / PGSIZE;
 	for (i = 0; i < npages; i++){
 		pages[i].pp_ref = 0;
 		if(i == 0) continue;
@@ -349,7 +350,7 @@ pgdir_walk(pde_t *pgdir, const void *va, int create)
 		return p + PTX(va);
 	}
 	struct Page * tmp;
-	if(create && (tmp = page_alloc(1)) != NULL){
+	if (create && (tmp = page_alloc(1)) != NULL){
 		tmp->pp_ref++;
 		*pgdir = page2pa(tmp) | PTE_P | PTE_U | PTE_W;
 		p = KADDR(PTE_ADDR(*pgdir));
@@ -883,8 +884,6 @@ check_page(void)
 	page_free(pp0);
 	page_free(pp1);
 	page_free(pp2);
-	cprintf("struct page: %d, npages = %d\n", sizeof(struct Page), npages);
-	cprintf("memory: %d\n", 256-(int)((ROUNDUP(npages*sizeof(struct Page),PGSIZE) / PGSIZE + 1) * 4 / 1024));
 	cprintf("check_page() succeeded!\n");
 }
 
