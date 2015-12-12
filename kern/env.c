@@ -206,7 +206,6 @@ env_setup_vm(struct Env *e)
 int
 env_alloc(struct Env **newenv_store, envid_t parent_id)
 {
-	cprintf("env_alloc");
 	int32_t generation;
 	int r;
 	struct Env *e;
