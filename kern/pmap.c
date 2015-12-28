@@ -210,7 +210,6 @@ mem_init(void)
 	// Initialize the SMP-related parts of the memory map
 	mem_init_mp();
 
->>>>>>> e7799a7dc7b7fb18b76a4dbb1bc55ee40575013e
 	// Check that the initial page directory has been set up correctly.
 	check_kern_pgdir();
 
