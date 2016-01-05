@@ -263,7 +263,16 @@ mem_init_mp(void)
 	//     Permissions: kernel RW, user NONE
 	//
 	// LAB 4: Your code here:
-
+	int i;
+	for(i = 0; i < NCPU; ++i){
+		boot_map_region(
+			kern_pgdir,
+			KSTACKTOP - i * (KSTKSIZE + KSTKGAP) - KSTKSIZE,
+			KSTKSIZE,
+			PADDR(percpu_kstacks[i]),
+			PTE_W
+		);
+	}
 }
 
 // --------------------------------------------------------------
@@ -308,6 +317,7 @@ page_init(void)
 		pages[i].pp_ref = 0;
 		if(i == 0) continue;
 		if(lu <= i && i < ru) continue;
+		if(i == MPENTRY_PADDR / PGSIZE) continue;
 		pages[i].pp_link = page_free_list;
 		page_free_list = &pages[i];
 	}

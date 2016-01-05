@@ -29,7 +29,48 @@ sched_yield(void)
 	// below to switch to this CPU's idle environment.
 
 	// LAB 4: Your code here.
+/*
+	uint32_t envid = thiscpu->cpu_env ? ENVX(thiscpu->cpu_env->env_id) : 0;
+	uint32_t first_eid = (++envid) % NENV;
+ 	uint32_t next_envid;
 
+ 	for (i = 0; i < NENV; ++i) {
+ 		next_envid = (first_eid + i) % NENV;
+ 		if (envs[next_envid].env_type == ENV_TYPE_IDLE)continue;
+ 		if(envs[next_envid].env_status == ENV_RUNNABLE ||
+ 			(envs[next_envid].env_status == ENV_RUNNING && envs[next_envid].env_cpunum == cpunum())
+ 			){
+ 			env_run(&envs[next_envid]);
+ 			break;
+ 		}
+ 	}*/
+
+	uint32_t envid = thiscpu->cpu_env ? ENVX(thiscpu->cpu_env->env_id) : 0;
+	uint32_t first_eid = (++envid) % NENV;
+	uint32_t next_envid;
+
+	// case: env status is RUNNABLE
+	for (i = 0; i < NENV; i++) {
+		next_envid = (first_eid+i) % NENV;
+		if (envs[next_envid].env_type != ENV_TYPE_IDLE &&
+		    envs[next_envid].env_status == ENV_RUNNABLE) {
+			//DEBUGING: cprintf("envrun RUNNABLE: %d\n", next_envid);
+			env_run(&envs[next_envid]);
+			break;
+		}
+	}
+
+	// case: env status is RUNNING
+	for (i = 0; i < NENV; i++) {
+		next_envid = (first_eid+i) % NENV;
+		if (envs[next_envid].env_type != ENV_TYPE_IDLE &&
+		    envs[next_envid].env_status == ENV_RUNNING &&
+		    envs[next_envid].env_cpunum == cpunum()) {
+			//DEBUGING cprintf("envrun RUNNING: %d\n", next_envid);
+			env_run(&envs[next_envid]);
+			break;
+		}
+	}
 	// For debugging and testing purposes, if there are no
 	// runnable environments other than the idle environments,
 	// drop into the kernel monitor.

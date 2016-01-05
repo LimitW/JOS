@@ -13,7 +13,7 @@
 #include <kern/picirq.h>
 #include <kern/cpu.h>
 #include <kern/spinlock.h>
-
+#include <inc/string.h>
 static struct Taskstate ts;
 
 /* For debugging, so print_trapframe can distinguish between printing
@@ -114,6 +114,40 @@ trap_init(void)
 	extern void _syshandler();
 	SETGATE(idt[T_SYSCALL], 0, GD_KT, _syshandler, 3);
 
+	extern void irq0();
+	extern void irq1();
+	extern void irq2();
+	extern void irq3();
+	extern void irq4();
+	extern void irq5();
+	extern void irq6();
+	extern void irq7();
+	extern void irq8();
+	extern void irq9();
+	extern void irq10();
+	extern void irq11();
+	extern void irq12();
+	extern void irq13();
+	extern void irq14();
+	extern void irq15();
+
+	SETGATE(idt[IRQ_OFFSET+0], 0, GD_KT, irq0, 0);
+	SETGATE(idt[IRQ_OFFSET+1], 0, GD_KT, irq1, 0);
+	SETGATE(idt[IRQ_OFFSET+2], 0, GD_KT, irq2, 0);
+	SETGATE(idt[IRQ_OFFSET+3], 0, GD_KT, irq3, 0);
+	SETGATE(idt[IRQ_OFFSET+4], 0, GD_KT, irq4, 0);
+	SETGATE(idt[IRQ_OFFSET+5], 0, GD_KT, irq5, 0);
+	SETGATE(idt[IRQ_OFFSET+6], 0, GD_KT, irq6, 0);
+	SETGATE(idt[IRQ_OFFSET+7], 0, GD_KT, irq7, 0);
+	SETGATE(idt[IRQ_OFFSET+8], 0, GD_KT, irq8, 0);
+	SETGATE(idt[IRQ_OFFSET+9], 0, GD_KT, irq9, 0);
+	SETGATE(idt[IRQ_OFFSET+10], 0, GD_KT, irq10, 0);
+	SETGATE(idt[IRQ_OFFSET+11], 0, GD_KT, irq11, 0);
+	SETGATE(idt[IRQ_OFFSET+12], 0, GD_KT, irq12, 0);
+	SETGATE(idt[IRQ_OFFSET+13], 0, GD_KT, irq13, 0);
+	SETGATE(idt[IRQ_OFFSET+14], 0, GD_KT, irq14, 0);
+	SETGATE(idt[IRQ_OFFSET+15], 0, GD_KT, irq15, 0);
+
 	// Per-CPU setup
 	trap_init_percpu();
 }
@@ -144,6 +178,9 @@ trap_init_percpu(void)
 	// user space on that CPU.
 	//
 	// LAB 4: Your code here:
+	int cid = thiscpu->cpu_id;
+	thiscpu->cpu_ts.ts_esp0 = KSTACKTOP - cid * (KSTKSIZE + KSTKGAP);
+	thiscpu->cpu_ts.ts_ss0 = GD_KD;
 
 	// Setup a TSS so that we get the right stack
 	// when we trap to the kernel.
@@ -245,7 +282,11 @@ trap_dispatch(struct Trapframe *tf)
 	// Handle clock interrupts. Don't forget to acknowledge the
 	// interrupt using lapic_eoi() before calling the scheduler!
 	// LAB 4: Your code here.
-
+	if(tf->tf_trapno == IRQ_OFFSET + IRQ_TIMER){
+		lapic_eoi();
+		sched_yield();
+		return;
+	}
 	// Unexpected trap: The user process or the kernel has a bug.
 	print_trapframe(tf);
 	if (tf->tf_cs == GD_KT)
@@ -278,6 +319,7 @@ trap(struct Trapframe *tf)
 		// Acquire the big kernel lock before doing any
 		// serious kernel work.
 		// LAB 4: Your code here.
+		lock_kernel();
 		assert(curenv);
 
 		// Garbage collect if current enviroment is a zombie
@@ -358,7 +400,39 @@ page_fault_handler(struct Trapframe *tf)
 	//   (the 'tf' variable points at 'curenv->env_tf').
 
 	// LAB 4: Your code here.
+	if (!curenv->env_pgfault_upcall)
+		goto userfault;
 
+	if (USTACKTOP < tf->tf_esp && tf->tf_esp < UXSTACKTOP - PGSIZE)
+		goto userfault;
+
+	{
+		void *dststack;
+		// reference: inc/trap.h: 59 ~ 86
+		struct UTrapframe utf;
+		utf.utf_fault_va = fault_va;
+		utf.utf_err = tf->tf_err;
+		utf.utf_regs = tf->tf_regs;
+		utf.utf_eip = tf->tf_eip;
+		utf.utf_eflags = tf->tf_eflags;
+		utf.utf_esp = tf->tf_esp;
+
+		if (UXSTACKTOP - PGSIZE <= tf->tf_esp
+		    && tf->tf_esp <= UXSTACKTOP - 1) {
+			dststack = (void *)(tf->tf_esp - sizeof(struct UTrapframe) - 4);
+		} else {
+			dststack = (void *)(UXSTACKTOP - sizeof(struct UTrapframe));
+		}
+
+		user_mem_assert(curenv, dststack, sizeof(struct UTrapframe), PTE_P | PTE_W | PTE_U);
+		memmove(dststack, (void *)&utf, sizeof(struct UTrapframe));
+		tf->tf_eip = (uint32_t) curenv->env_pgfault_upcall;
+		tf->tf_esp = (uint32_t) dststack;
+
+		env_run(curenv);
+
+	}
+userfault:
 	// Destroy the environment that caused the fault.
 	cprintf("[%08x] user fault va %08x ip %08x\n",
 		curenv->env_id, fault_va, tf->tf_eip);
