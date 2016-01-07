@@ -29,48 +29,24 @@ sched_yield(void)
 	// below to switch to this CPU's idle environment.
 
 	// LAB 4: Your code here.
-/*
-	uint32_t envid = thiscpu->cpu_env ? ENVX(thiscpu->cpu_env->env_id) : 0;
-	uint32_t first_eid = (++envid) % NENV;
- 	uint32_t next_envid;
 
- 	for (i = 0; i < NENV; ++i) {
- 		next_envid = (first_eid + i) % NENV;
- 		if (envs[next_envid].env_type == ENV_TYPE_IDLE)continue;
- 		if(envs[next_envid].env_status == ENV_RUNNABLE ||
- 			(envs[next_envid].env_status == ENV_RUNNING && envs[next_envid].env_cpunum == cpunum())
- 			){
- 			env_run(&envs[next_envid]);
- 			break;
- 		}
- 	}*/
+    struct Env *curr = thiscpu->cpu_env;
+    int idx = curr ? ENVX(curr->env_id) % NENV : 0;
+	for (i = 1; i < NENV; i++) {
+        idx = (idx + 1) % NENV;
 
-	uint32_t envid = thiscpu->cpu_env ? ENVX(thiscpu->cpu_env->env_id) : 0;
-	uint32_t first_eid = (++envid) % NENV;
-	uint32_t next_envid;
+        if (envs[idx].env_type == ENV_TYPE_IDLE)
+            continue;
 
-	// case: env status is RUNNABLE
-	for (i = 0; i < NENV; i++) {
-		next_envid = (first_eid+i) % NENV;
-		if (envs[next_envid].env_type != ENV_TYPE_IDLE &&
-		    envs[next_envid].env_status == ENV_RUNNABLE) {
-			//DEBUGING: cprintf("envrun RUNNABLE: %d\n", next_envid);
-			env_run(&envs[next_envid]);
-			break;
-		}
+        if (envs[idx].env_status == ENV_RUNNABLE)
+            env_run(&envs[idx]);
 	}
 
-	// case: env status is RUNNING
-	for (i = 0; i < NENV; i++) {
-		next_envid = (first_eid+i) % NENV;
-		if (envs[next_envid].env_type != ENV_TYPE_IDLE &&
-		    envs[next_envid].env_status == ENV_RUNNING &&
-		    envs[next_envid].env_cpunum == cpunum()) {
-			//DEBUGING cprintf("envrun RUNNING: %d\n", next_envid);
-			env_run(&envs[next_envid]);
-			break;
-		}
-	}
+    if (curr && curr->env_status == ENV_RUNNING) {
+        // If not found and current environment is running, then continue running.
+        env_run(curr);
+    }
+
 	// For debugging and testing purposes, if there are no
 	// runnable environments other than the idle environments,
 	// drop into the kernel monitor.

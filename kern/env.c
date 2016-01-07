@@ -526,13 +526,11 @@ env_run(struct Env *e)
 		}
 	}
 	curenv = e;
-	e->env_cpunum = cpunum();
 	e->env_status = ENV_RUNNING;
 	e->env_runs++;
+	lcr3(PADDR(e->env_pgdir));
 
 	unlock_kernel();
-
-	lcr3(PADDR(e->env_pgdir));
 	env_pop_tf(&e->env_tf);
 }
 

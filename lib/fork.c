@@ -25,16 +25,9 @@ pgfault(struct UTrapframe *utf)
 	//   (see <inc/memlayout.h>).
 
 	// LAB 4: Your code here.
-
-	if ((err & FEC_WR) == 0) {
-		panic("Denied write 0x%x: err %x\n\n", (uint32_t) addr, err);
-	}
-
-	// in user spance, you can only use vpt
-	pte_t pte = vpt[PGNUM((uint32_t)addr)];
-	if (!(pte & PTE_COW)) {
-		panic("Denied copy-on-write 0x%x, env_id 0x%x\n", (uint32_t) addr, thisenv->env_id);
-	}
+	int envid = sys_getenvid();
+	if((err & FEC_WR) == 0 || (vpt[PGNUM(addr)] & PTE_COW) == 0)
+		panic("pgfault(): not a write nor a cow page\n");
 
 	// Allocate a new page, map it at a temporary location (PFTEMP),
 	// copy the data from the old page to the new page, then move the new
@@ -44,16 +37,14 @@ pgfault(struct UTrapframe *utf)
 	//   No need to explicitly delete the old page's mapping.
 
 	// LAB 4: Your code here.
-	void *tmpva = (void *) ROUNDDOWN((uint32_t) addr, PGSIZE);
-	if ((r = sys_page_alloc(0, (void *) PFTEMP, PTE_P|PTE_W|PTE_U)) < 0) {
-		panic("sys_page_alloc: error %e\n", r);
-	}
+	if( (r = sys_page_alloc(envid , (void*)PFTEMP, PTE_U | PTE_W | PTE_P)) < 0)
+		panic("pgfault(): failed %e\n", r);
 
-	memmove((void *)PFTEMP, tmpva, PGSIZE);
+	addr = ROUNDDOWN(addr, PGSIZE);
+	memmove(PFTEMP, addr, PGSIZE);
 
-	if ((r = sys_page_map(0, (void *)PFTEMP, 0, tmpva,
-		PTE_P|PTE_W|PTE_U)) < 0)
-		panic("sys_page_map: error %e\n", r);
+	if ((r = sys_page_map(envid , PFTEMP, envid , addr, PTE_U | PTE_P | PTE_W)) < 0)
+		panic ("pgfault(): page mapping failed: %e\n", r);
 }
 
 //
@@ -70,38 +61,27 @@ pgfault(struct UTrapframe *utf)
 static int
 duppage(envid_t envid, unsigned pn)
 {
+	// LAB 4: Your code here.
 	int r;
 
-	// LAB 4: Your code here.
-	unsigned va = (pn << PGSHIFT);
-	if (!(vpt[pn] & PTE_P))
-		return -E_INVAL;
+	int now_evid = sys_getenvid();
 
-	if (!((vpt[pn] & PTE_W) || (vpt[pn] & PTE_COW))) {
-		if ((r = sys_page_map(0, (void *) va, envid, (void *) va,
-			PGOFF(vpt[pn]) )) < 0) {
-			panic("sys_page_map: error %e\n", r);
-		}
+	void* addr = (void*)(pn * PGSIZE);
+
+	pte_t pte = vpt[pn];
+
+	if((pte & PTE_W) != 0 || (pte & PTE_COW) != 0)
+	{
+		if((r = sys_page_map(now_evid, addr, envid, addr, PTE_U | PTE_P | PTE_COW)) < 0)
+			panic("duppage(): failed... mapping page into envid %e\n", r);
+		if((r = sys_page_map(now_evid, addr, now_evid, addr, PTE_U | PTE_P | PTE_COW)) < 0)
+			panic("duppage(): failed... mapping page into self: %e\n", r);
 	}
-
-	if (pn >= PGNUM(UTOP) || va >= UTOP)
-		panic("page out of UTOP\n");
-
-	if (!(vpt[pn] & PTE_U))
-		panic("page must user accessible\n");
-
-	// change current env perm
-	if ((r = sys_page_map(0, (void *) va, envid, (void *) va,
-		PTE_P | PTE_U | PTE_COW)) < 0)
-		panic("sys_page_map: error %e\n", r);
-
-	// use syscall to change parent perm
-	if ((r = sys_page_map(0, (void *) va, 0, (void *) va,
-		PTE_P | PTE_U | PTE_COW)) < 0)
-		panic("sys_page_map: error %e\n", r);
-
-	if ((vpt[pn] & PTE_W) && (vpt[pn] & PTE_COW))
-		panic("duppage: should now set both PTE_W and PTE_COW\n");
+	else
+	{
+		if((r = sys_page_map(now_evid, addr, envid, addr, PTE_U | PTE_P)) < 0)
+			panic("duppage(): failed... no cow needed: %e\n", r);
+	}
 
 	return 0;
 }
@@ -122,30 +102,38 @@ duppage(envid_t envid, unsigned pn)
 //   Neither user exception stack should ever be marked copy-on-write,
 //   so you must allocate a new page for the child's user exception stack.
 //
+extern void _pgfault_upcall(void);
 envid_t
 fork(void)
 {
 	// LAB 4: Your code here.
-	extern void _pgfault_upcall(void);
-	envid_t myenvid = sys_getenvid();
-	envid_t envid;
-	int r;
+	// Setup handler
 	set_pgfault_handler(pgfault);
-	if ((envid = sys_exofork()) < 0) {
-		panic("sys_exofork: error %e\n", envid);
-	}
 
-	if (envid == 0) { // child env
+
+	// Create Child
+	envid_t envid = sys_exofork();
+
+	if(envid < 0)
+		cprintf("fork(): create child failed\n");
+
+	uint32_t addr;
+	int r;
+
+	if(envid == 0)
+	{
+		// fix thisenv
 		thisenv = &envs[ENVX(sys_getenvid())];
 		return 0;
 	}
 
+
 	int i,j,pn;
-	i=j=pn=0;
+	i = j = pn = 0;
 	for (i = 0; i < PDX(UTOP); i++) {
 		if (vpd[i] & PTE_P) {
 			for (j = 0; j < NPTENTRIES; j++) {
-				pn = i* NPTENTRIES + j;
+				pn = i * NPTENTRIES + j;
 				if (pn == PGNUM(UXSTACKTOP - PGSIZE)) {
 					break;
 				}
@@ -157,34 +145,18 @@ fork(void)
 		}
 	}
 
-	// Allocate new exception stack for child
-	if ((r = sys_page_alloc(envid, (void*)(UXSTACKTOP-PGSIZE), PTE_P | PTE_U | PTE_W)) < 0)
-		panic("sys_page_alloc: error %e\n", r);
 
-	// Map child uxstack to temp page
-	if (sys_page_map(envid, (void *) (UXSTACKTOP - PGSIZE), myenvid, PFTEMP,
-			PTE_U | PTE_P | PTE_W) < 0) {
-		return -1;
-	}
+	// new page for user exception stack
+	if ((r = sys_page_alloc (envid, (void *)(UXSTACKTOP - PGSIZE), PTE_W | PTE_U | PTE_P)) != 0)
+		panic("fork(): uxstk failed: %e", r);
 
-	// Copy own uxstack to temp page
-	memmove((void *)(UXSTACKTOP - PGSIZE), PFTEMP, PGSIZE);
+	sys_env_set_pgfault_upcall (envid, _pgfault_upcall);
 
-	// Unmap temp page
-	if (sys_page_unmap(myenvid, PFTEMP) < 0) {
-		return -1;
-	}
-
-	if ((r = sys_env_set_pgfault_upcall(envid, thisenv->env_pgfault_upcall)) < 0)
-		panic("sys_env_set_pgfault_upcall: error %e\n", r);
-
-	if ((r = sys_env_set_status(envid, ENV_RUNNABLE)) < 0) {
-		cprintf("sys_env_set_status: error %e\n", r);
-		return -1;
-	}
-
+	if ((r = sys_env_set_status(envid, ENV_RUNNABLE)) < 0)
+		panic("fork(): setting child status failed: %e", r);
 
 	return envid;
+
 }
 
 // Challenge!
